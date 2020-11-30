@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+ipykernel = "*"
+jupyter = "*"
+pandas = "*"
+matplotlib = "*"
+tensorflow = "*"
+gym = "*"
+imageio = "==2.4.0"
+pillow = "*"
+pyglet = "==1.3.2"
+pyvirtualdisplay = "*"
+tf-agents-nightly = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
+
+[scripts]
+jupyter = "jupyter notebook --notebook-dir ."
