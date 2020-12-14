@@ -1,6 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    install_requires=[
-    ]
+    name='agents',
+    version='1.0',
+    install_requires=[]
 )
