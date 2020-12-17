@@ -39,7 +39,7 @@ with tf.Session() as sess:
 
     # Set up the agents
     # TODO pass appropriate parameters to the PPO Agent
-    agent = PPOAgent()
+    agent = PPOAgent(train_every=10)
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
