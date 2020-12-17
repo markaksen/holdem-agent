@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 rlcard = {extras = ["tensorflow"], version = "*"}
 agents = { editable = true, path = "./agents" }
-ipython = "*"
 
 [dev-packages]
 
