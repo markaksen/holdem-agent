@@ -140,11 +140,32 @@ class PPOPolicy(object):
         # TODO what is the actor loss? this is prediction error on action taken I think
         self._actor_loss = tf.losses.log_loss(self.actions, action_prob)
 
+    def _loss_clip(self, epsilon=0.2):
+        '''Compute the clip loss'''
+        # Reference https://arxiv.org/pdf/1707.06347.pdf - equation 7
+        # TODO implement L^{CLIP}(theta) - see below link
+        # epsilon <- hyper param, 0.2, say
+        #
+        # Ahat_t <- estimated value of advantage function at time t
+        # r_t(theta) <- pi_theta(a_t | s_t) / pi_thetaold(a_t | s_t), where pi_theta is stochastic policy i.e. policy ration
+        #
+        # # Unclipped objective
+        # unclipped <- r_t(theta) * Ahat_t
+        # # Clipped objective
+        # clipped <- max(min(r_t(theta), 1+epsilon), 1-epsilon) * Ahat_t [tf has clip_by_value, which they use in their implementation]
+        # # Take their min so that result is lower bound on unclipped objective
+        # return min(unclipped, clipped)
+        raise NotImplementedError
+
     def _loss(self):
         '''Compute the loss'''
         # TODO This should compute the loss for the overall system using the PPO Loss statement
         # which is a function of actor loss, value loss, the clip, the variance penalty, and the entropy bonus
-        # which is described in the PPO Paper here: https://arxiv.org/pdf/1707.06347.pdf on page 9
+        # which is described in the PPO Paper here: https://arxiv.org/pdf/1707.06347.pdf in equation 9
+
+        # TODO for OpenAI (PPO paper authors') implementation, consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
+        # Adjacent files also useful
+
         raise NotImplementedError
 
     def _advantage(self, returns, value_preds, next_value_preds):
