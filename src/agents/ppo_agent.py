@@ -85,14 +85,15 @@ class PPOAgent(object):
 
 class PPOPolicy(object):
     ''' PPO Policy context and data '''
-    def __init__(self, action_num, state_shape, learning_rate, gamma = 0.9, critic_layers=[100], actor_layers=[100]):
+    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[100], actor_layers=[100]):
         self.gamma = gamma  # This is the discount factor
         self.sess = tf.Session()
         # This is our critic network, which estimates value of any given state
-        self.X = tf.placeholder(shape=[None, state_shape], dtype=tf.float32, name="X")
-        self.X_next = tf.placeholder(shape=[None, state_shape], dtype=tf.float32, name="next_X")
-        self.rewards = tf.placeholder(shape=[None], dtype=tf.float32, name='reward')
-        self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='action')
+        # TODO double check shapes of below (SF - changed from arrays to tuples and from state_shape to state_shape[0])
+        self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
+        self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
+        self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
+        self.actions = tf.placeholder(dtype=tf.float32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
         
         self._build_value_net(layers=critic_layers)
