@@ -128,7 +128,7 @@ class PPOPolicy(object):
         value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)
         next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)
         advantage = self._advantage(self.rewards, next_value_pred, value_pred)
-        self._value_loss = tf.pow2(advantage)
+        self._value_loss = tf.pow(advantage, 2)
         #TODO Need to validate this function works as we expect
 
     def _build_actor_net(self, action_num, layers):
