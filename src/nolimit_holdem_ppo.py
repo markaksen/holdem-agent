@@ -38,8 +38,11 @@ with tf.Session() as sess:
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Set up the agents
-    # TODO pass appropriate parameters to the PPO Agent
-    agent = PPOAgent(train_every=10)
+    # TODO pass appropriate parameters to the PPO Agent beyond these
+    agent = PPOAgent(sess,
+                     action_num=env.action_num,
+                     train_every=train_every,
+                     state_shape=env.state_shape)
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
