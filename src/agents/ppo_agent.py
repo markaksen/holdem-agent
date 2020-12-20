@@ -8,7 +8,11 @@ import tensorflow as tf
 class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
     
-    def __init__(self, sess, train_every, action_num, state_shape, learning_rate=0.00005, gamma=0.9, critic_layers=None, actor_layers=None):
+    def __init__(self, sess, train_every, action_num, state_shape,
+                 learning_rate=0.00005, gamma=0.9, critic_layers=None, actor_layers=None,
+                 replay_memory_size=20000, replay_memory_init_size=100,
+                 # TODO add more? these necessary? and see ppo2.py in OpenAI for docs on what params are. e.g. gamma vs lam
+                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
         '''
         Build a PPOAgent for playing RLCard games. Implements an advantage actor-critic method that is trained using the PPO surrogate objective
         Args:
@@ -24,6 +28,8 @@ class PPOAgent(object):
         self.train_every = train_every
         self.use_raw = True
         self.memory = []
+        self.replay_memory_size = replay_memory_size
+        self.replay_memory_init_size = replay_memory_init_size
         self.total_t = 0
         self.policy = PPOPolicy(
             action_num=action_num,
@@ -51,6 +57,8 @@ class PPOAgent(object):
 
     def feed_memory(self, state, action, reward, next_state, done):
         '''Store the experience'''
+        if len(self.memory) == self.replay_memory_size:
+            self.memory.pop(0)
         self.memory.append({
             "state": state,
             "action": action,
@@ -89,7 +97,6 @@ class PPOPolicy(object):
         self.gamma = gamma  # This is the discount factor
         self.sess = tf.Session()
         # This is our critic network, which estimates value of any given state
-        # TODO double check shapes of below (SF - changed from arrays to tuples and from state_shape to state_shape[0])
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
