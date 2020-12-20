@@ -2,8 +2,14 @@
 Implementation of an RLcard agent using the Proximal Policy Optimization method
 """
 import typing
-import tensorflow as tf 
+import random
+import numpy as np
+import tensorflow as tf
+from collections import namedtuple
 
+from rlcard.utils.utils import remove_illegal
+
+Transition = namedtuple('Transition', ['state', 'action', 'reward', 'next_state', 'done'])
 
 class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
@@ -38,6 +44,10 @@ class PPOAgent(object):
             gamma=gamma,
             critic_layers=critic_layers if critic_layers else [100],
             actor_layers=actor_layers if actor_layers else [100],
+            cliprange=cliprange,
+            vf_coef=vf_coef,
+            ent_coef=ent_coef,
+            lam=lam
         )
     
     def feed(self, ts):
@@ -69,31 +79,57 @@ class PPOAgent(object):
 
     def train(self):
         ''' Train the model'''
-        self.policy.update(self.memory)
+        # self.policy.update(self.memory)
+        raise NotImplementedError
 
-    def step(self, state: dict):
-        ''' Predict the action given the curent state in gerenerating training data.
+    def predict(self, state):
+        ''' Predict the action probabilities
         Args:
-            state (dict): An dictionary that represents the current state
+            state (numpy.array): current state
         Returns:
-            action (int): The action predicted (randomly chosen) by the random agent
+            q_values (numpy.array): a 1-d array where each entry represents a Q value
         '''
         raise NotImplementedError
-    
+
+    # step vs. eval_step as per README
+        # env.run(is_training=False): Run a complete game and return trajectories and payoffs.
+        # The function can be used after the `set_agents` is called. If `is_training` is `True`,
+        # it will use `step` function in the agent to play the game. If `is_training` is `False`,
+        # `eval_step` will be called instead.
+
+    def step(self, state: dict):
+        ''' Predict the action for generating training data
+        Args:
+            state (dict): current state
+        Returns:
+            action (int): an action id
+        '''
+        # Sample according to probs (based on dqn_agent impl)
+        A = self.predict(state['obs'])
+        A = remove_illegal(A, state['legal_actions'])
+        action = np.random.choice(np.arange(len(A)), p=A)
+        return action
+
     def eval_step(self, state: dict):
         ''' Predict the action given the current state for evaluation.
         Args:
-            state (dict): An dictionary that represents the current state
+            state (dict): current state
         Returns:
-            action (int): The action predicted (randomly chosen) by the random agent
-            probs (list): The list of action probabilities
+            action (int): an action id
+            probs (list): a list of probabilies
         '''
-        raise NotImplementedError
-
+        # Sample according to probs (based on dqn_agent impl)
+        A = self.predict(state['obs']) # todo in dqn this is not self.predict but rather self.estimator.predict
+        probs = remove_illegal(A, state['legal_actions'])
+        best_action = np.argmax(probs)
+        return best_action, probs
 
 class PPOPolicy(object):
     ''' PPO Policy context and data '''
-    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[100], actor_layers=[100]):
+    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[100], actor_layers=[100],
+                 # TODO params, same as above
+                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
+        print(state_shape)
         self.gamma = gamma  # This is the discount factor
         self.sess = tf.Session()
         # This is our critic network, which estimates value of any given state
@@ -102,12 +138,28 @@ class PPOPolicy(object):
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
         self.actions = tf.placeholder(dtype=tf.float32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
-        
         self._build_value_net(layers=critic_layers)
         # This is our actor network, which is defining our policy
         self._build_actor_net(action_num=action_num, layers=actor_layers)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
         self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
+
+# this part down is based on OpenAI
+# already have actions (int or float?), lr, cliprate, rewards
+        # self.A = A = tf.placeholder(dtype=tf.int32, shape=(None, state_shape[0]), name="actions") # actions
+        # self.ADV = tf.placeholder(tf.float32, [None]) # advantages
+        # self.R = R = tf.placeholder(tf.float32, [None]) # returns
+        # Keep track of old actor
+        self.OLDNEGLOGPAC = tf.placeholder(tf.float32, [None]) # old neg log probs
+        # Keep track of old critic
+        self.OLDVPRED = tf.placeholder(tf.float32, [None]) # old value preds
+        # self.LR = LR = tf.placeholder(tf.float32, []) # learning rate
+        # Cliprange
+        self.CLIPRANGE = cliprange #= tf.placeholder(tf.float32, [])
+
+        # sf params
+        self.vf_coef = vf_coef
+        self.ent_coef = ent_coef
 
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
         _, loss = sess.run(
@@ -123,20 +175,27 @@ class PPOPolicy(object):
 
     def _build_value_net(self, layers):
         '''Build the value network'''
-        """reference https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f"""
+        """reference https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f, dqn_agent"""
+        # Batch normalization
         train_X = tf.layers.batch_normalization(self.X, training=self.is_train)
-        fc = tf.contrib.layers.flatten(train_X)
-
         train_X_next = tf.layers.batch_normalization(self.X_next, training=self.is_train)
+
+        # Fully connected layers for X and X_next
+        fc = tf.contrib.layers.flatten(train_X)
         fc_next = tf.contrib.layers.flatten(train_X_next)
         for layer_width in layers:
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
             fc_next = tf.contrib.layers.fully_connected(fc_next, layer_width, activation_fn=tf.tanh)
-        value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)
-        next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)
-        advantage = self._advantage(self.rewards, next_value_pred, value_pred)
-        self._value_loss = tf.pow(advantage, 2)
+        self.value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)
+        self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)
+
+        # TODO see dqn_agent line 275 for getting predictions
+
+        # TODO should this be a tensor or shoulds call tf.reduce_mean()
+        # Calculate advantage and loss
+        self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
         #TODO Need to validate this function works as we expect
+        self._value_loss = tf.pow(self.advantage, 2)
 
     def _build_actor_net(self, action_num, layers):
         '''Build the actor network'''
@@ -149,6 +208,7 @@ class PPOPolicy(object):
 
     def _loss_clip(self, epsilon=0.2):
         '''Compute the clip loss'''
+        # TODO remove this method once _loss filled out
         # Reference https://arxiv.org/pdf/1707.06347.pdf - equation 7
         # TODO implement L^{CLIP}(theta) - see below link
         # epsilon <- hyper param, 0.2, say
@@ -164,16 +224,64 @@ class PPOPolicy(object):
         # return min(unclipped, clipped)
         raise NotImplementedError
 
+    def entropy(self):
+        # open AI: return tf.add_n([p.entropy() for p in self.categoricals])
+        raise NotImplementedError
+
+    def neglogp(self, actions):
+        # open AI: return tf.add_n([p.neglogp(px) for p, px in zip(self.categoricals, tf.unstack(x, axis=-1))])
+        raise NotImplementedError
+
+    def vf_predict(self):
+        # oepn AI: train_model.vf
+        raise NotImplementedError
+
     def _loss(self):
         '''Compute the loss'''
-        # TODO This should compute the loss for the overall system using the PPO Loss statement
+        # This should compute the loss for the overall system using the PPO Loss statement
         # which is a function of actor loss, value loss, the clip, the variance penalty, and the entropy bonus
         # which is described in the PPO Paper here: https://arxiv.org/pdf/1707.06347.pdf in equation 9
 
         # TODO for OpenAI (PPO paper authors') implementation, consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
-        # Adjacent files also useful
+        return 0
+        # Calculate ratio (pi current policy / pi old policy) - use neg log probabilities
+        neglogpac = None #self.neglogp(self.actions) TODO
+        ratio = tf.exp(self.OLDNEGLOGPAC - neglogpac)
 
-        raise NotImplementedError
+        # Calculate the entropy
+        # Entropy is used to improve exploration by limiting the premature convergence to suboptimal policy.
+        # TODO
+        # entropy = tf.reduce_mean(train_model.pd.entropy())
+        entropy = None #self.entropy()
+
+        # CALCULATE THE LOSS
+        # Total loss = Policy gradient loss - entropy * entropy coefficient + Value coefficient * value loss
+
+        # Clip the value to reduce variability during Critic training
+        # Get the predicted value
+        vpred = None # self.vf_predict() TODO
+        vpredclipped = self.OLDVPRED + tf.clip_by_value(vpred - self.OLDVPRED, - self.CLIPRANGE, self.CLIPRANGE)
+        # Unclipped value
+        vf_losses1 = tf.square(vpred - self.rewards)
+        # Clipped value
+        vf_losses2 = tf.square(vpredclipped - self.rewards)
+
+        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
+
+        # Defining Loss = - J is equivalent to max J
+        pg_losses = -self.ADV * ratio
+
+        pg_losses2 = -self.ADV * tf.clip_by_value(ratio, 1.0 - self.CLIPRANGE, 1.0 + self.CLIPRANGE)
+
+        # Final PG loss
+        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+        approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - self.OLDNEGLOGPAC))
+        clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), self.CLIPRANGE)))
+
+        # Total loss
+        loss = pg_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
+
+        return loss
 
     def _advantage(self, returns, value_preds, next_value_preds):
         '''Advantage estimator
