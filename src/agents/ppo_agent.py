@@ -132,19 +132,20 @@ class PPOPolicy(object):
                  # TODO params, same as above
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
         self.gamma = gamma  # This is the discount factor
-        # This is our critic network, which estimates value of any given state
+        # State, next state, rewards, actions
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
         self.actions = tf.placeholder(dtype=tf.int32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
+
+        # This is our critic network, which estimates value of any given state
         self._build_value_net(layers=critic_layers)
         # This is our actor network, which is defining our policy
         self._build_actor_net(action_num=action_num, layers=actor_layers)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
 
 # this part down is based on OpenAI
-# already have actions (int or float?), lr, cliprate, rewards
         # self.A = A = tf.placeholder(dtype=tf.int32, shape=(None, state_shape[0]), name="actions") # actions
         # self.ADV = tf.placeholder(tf.float32, [None]) # advantages
         # self.R = R = tf.placeholder(tf.float32, [None]) # returns
@@ -209,8 +210,8 @@ class PPOPolicy(object):
         for layer_width in layers:
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
             fc_next = tf.contrib.layers.fully_connected(fc_next, layer_width, activation_fn=tf.tanh)
-        self.value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)
-        self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)
+        self.value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)[0]
+        self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)[0]
 
         # Calculate advantage and loss
         self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
