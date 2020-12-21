@@ -16,7 +16,7 @@ env = rlcard.make('no-limit-holdem', config={'seed': 0})
 eval_env = rlcard.make('no-limit-holdem', config={'seed': 0})
 
 # Set the iterations numbers and how frequently we evaluate the performance
-evaluate_every = 100
+evaluate_every = 1000
 evaluate_num = 1000
 episode_num = 100000
 
