@@ -94,7 +94,7 @@ with tf.Session() as sess:
     logger.plot('PPO')
     
     # Save model
-    save_dir = '../models/nolimit_holdem_ppo_64x64_oldadv_lrsmall'
+    save_dir = 'models/nolimit_holdem_ppo'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     saver = tf.train.Saver()
