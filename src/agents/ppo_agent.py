@@ -31,6 +31,7 @@ class PPOAgent(object):
             critic_layers (list)
             actor_layers (list)
         '''
+        self.sess = sess
         self.train_every = train_every
         self.use_raw = True
         self.memory = []
@@ -79,17 +80,12 @@ class PPOAgent(object):
 
     def train(self):
         ''' Train the model'''
-        # self.policy.update(self.memory)
-        raise NotImplementedError
+        # TODO implement the sampling for the memory
 
-    def predict(self, state):
-        ''' Predict the action probabilities
-        Args:
-            state (numpy.array): current state
-        Returns:
-            q_values (numpy.array): a 1-d array where each entry represents a Q value
-        '''
-        raise NotImplementedError
+        samples = random.sample(self.memory, self.batch_size)
+        import pdb; pdb.set_trace()
+        state_batch, action_batch, reward_batch, next_state_batch = self.memory.sample()
+        self.policy.update(self.sess, state_batch, action_batch, reward_batch, next_state_batch)
 
     # step vs. eval_step as per README
         # env.run(is_training=False): Run a complete game and return trajectories and payoffs.
@@ -105,7 +101,9 @@ class PPOAgent(object):
             action (int): an action id
         '''
         # Sample according to probs (based on dqn_agent impl)
-        A = self.predict(state['obs'])
+        state_obs = np.expand_dims(state['obs'], 0)
+        A = self.policy.predict(self.sess, state_obs)[0]
+        import pdb; pdb.set_trace()
         A = remove_illegal(A, state['legal_actions'])
         action = np.random.choice(np.arange(len(A)), p=A)
         return action
@@ -119,7 +117,7 @@ class PPOAgent(object):
             probs (list): a list of probabilies
         '''
         # Sample according to probs (based on dqn_agent impl)
-        A = self.predict(state['obs']) # todo in dqn this is not self.predict but rather self.estimator.predict
+        A = self.policy.predict(state['obs']) # todo in dqn this is not self.predict but rather self.estimator.predict
         probs = remove_illegal(A, state['legal_actions'])
         best_action = np.argmax(probs)
         return best_action, probs
@@ -131,7 +129,6 @@ class PPOPolicy(object):
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
         print(state_shape)
         self.gamma = gamma  # This is the discount factor
-        self.sess = tf.Session()
         # This is our critic network, which estimates value of any given state
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
@@ -142,7 +139,7 @@ class PPOPolicy(object):
         # This is our actor network, which is defining our policy
         self._build_actor_net(action_num=action_num, layers=actor_layers)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
-        self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
+        self.train_op = self.optimizer.minimize(self._loss_pg(), global_step=tf.contrib.framework.get_global_step())
 
 # this part down is based on OpenAI
 # already have actions (int or float?), lr, cliprate, rewards
@@ -163,7 +160,7 @@ class PPOPolicy(object):
 
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
         _, loss = sess.run(
-            [self.train_op, self._loss], 
+            [self.train_op, self._loss_pg], 
             {
                 self.X: state_batch,
                 self.actions: action_batch,
@@ -172,6 +169,16 @@ class PPOPolicy(object):
             }
         )
         return loss
+
+    def predict(self, sess, state):
+        action_prob = sess.run(
+            self.action_probabilities,
+            {
+                self.X: state,
+                self.is_train: False,
+            }
+        )
+        return action_prob
 
     def _build_value_net(self, layers):
         '''Build the value network'''
@@ -195,16 +202,23 @@ class PPOPolicy(object):
         # Calculate advantage and loss
         self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
         #TODO Need to validate this function works as we expect
-        self._value_loss = tf.pow(self.advantage, 2)
+        self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
     def _build_actor_net(self, action_num, layers):
         '''Build the actor network'''
         fc = tf.layers.batch_normalization(self.X, training=self.is_train)
         for layer_width in layers:
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
-        action_prob = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=None)
+        self.action_probabilities = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=None)
         # TODO what is the actor loss? this is prediction error on action taken I think
-        self._actor_loss = tf.losses.log_loss(self.actions, action_prob)
+        # self._actor_loss = tf.losses.log_loss(self.actions, self.action_probabilities)
+
+    def _loss_pg(self):
+        """
+        L^{PG}(\theta) = \hat{E}[log \pi_{\theta}(a_t | s_t) \hat{A_t}] 
+        """
+        return tf.reduce_mean(self._value_loss)
+
 
     def _loss_clip(self, epsilon=0.2):
         '''Compute the clip loss'''
