@@ -16,12 +16,13 @@ env = rlcard.make('no-limit-holdem', config={'seed': 0})
 eval_env = rlcard.make('no-limit-holdem', config={'seed': 0})
 
 # Set the iterations numbers and how frequently we evaluate the performance
-evaluate_every = 1000
+evaluate_every = 100
 evaluate_num = 1000
-episode_num = 100000
+episode_num = 250000
 
 # The intial memory size
 memory_init_size = 1000
+max_buffer_size = 10000
 
 # Train the agent every X steps
 train_every = 10
@@ -43,8 +44,11 @@ with tf.Session() as sess:
                      action_num=env.action_num,
                      train_every=train_every,
                      state_shape=env.state_shape,
-                     actor_layers=[64, 64],
-                     critic_layers=[64, 64])
+                     replay_memory_init_size=memory_init_size,
+                     replay_memory_size=max_buffer_size,
+                     actor_layers=[32, 32],
+                     critic_layers=[32, 32],
+                     learning_rate=3e-4)
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])

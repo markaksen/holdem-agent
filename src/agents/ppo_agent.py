@@ -143,17 +143,12 @@ class PPOPolicy(object):
         self._build_actor_net(action_num=action_num, layers=actor_layers)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
 
-# this part down is based on OpenAI
-        # self.A = A = tf.placeholder(dtype=tf.int32, shape=(None, state_shape[0]), name="actions") # actions
-        # self.ADV = tf.placeholder(tf.float32, [None]) # advantages
-        # self.R = R = tf.placeholder(tf.float32, [None]) # returns
         # Keep track of old actor
         self.OLDNEGLOGPAC = tf.placeholder(tf.float32, [None]) # old neg log probs
         # Keep track of old critic
         self.OLDVPRED = tf.placeholder(tf.float32, [None]) # old value preds
-        # self.LR = LR = tf.placeholder(tf.float32, []) # learning rate
         # Cliprange
-        self.CLIPRANGE = cliprange #= tf.placeholder(tf.float32, [])
+        self.CLIPRANGE = cliprange
 
         # sf params
         self.vf_coef = vf_coef
@@ -161,7 +156,6 @@ class PPOPolicy(object):
 
         # Training
         self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
-        # self.train_op = self.optimizer.minimize(self._loss_pg(), global_step=tf.contrib.framework.get_global_step())
 
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
         oldvpred, oldneglogpac = sess.run(
@@ -171,7 +165,6 @@ class PPOPolicy(object):
 
         _, loss = sess.run(
             [self.train_op, self._loss],
-            # [self.train_op, self._loss_pg],
             {
                 self.X: state_batch,
                 self.actions: action_batch,
@@ -195,7 +188,6 @@ class PPOPolicy(object):
         return action_prob
 
     def _build_value_net(self, layers):
-        #TODO need to pass in is_train at all layers
         '''Build the value network'''
         """reference https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f, dqn_agent"""
         # Batch normalization
@@ -213,7 +205,6 @@ class PPOPolicy(object):
 
         # Calculate advantage and loss
         self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
-        #TODO Need to validate this function works as we expect
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
     @property
@@ -253,7 +244,9 @@ class PPOPolicy(object):
         # which is a function of actor loss, value loss, the clip, the variance penalty, and the entropy bonus
         # which is described in the PPO Paper here: https://arxiv.org/pdf/1707.06347.pdf in equation 9
 
-        # TODO for OpenAI (PPO paper authors') implementation, consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
+        # Based on OpenAI (PPO paper authors') implementation.
+        # Consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
+
         # Calculate ratio (pi current policy / pi old policy) - use neg log probabilities
         neglogpac = self._neg_log_probs_for_taken_actions
         ratio = tf.exp(self.OLDNEGLOGPAC - neglogpac)
@@ -284,8 +277,6 @@ class PPOPolicy(object):
 
         # Final PG loss
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
-        approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - self.OLDNEGLOGPAC))
-        clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), self.CLIPRANGE)))
 
         # Total loss
         loss = pg_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
