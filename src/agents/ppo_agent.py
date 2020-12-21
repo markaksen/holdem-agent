@@ -15,7 +15,7 @@ class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
     
     def __init__(self, sess, train_every, action_num, state_shape, batch_size=32,
-                 learning_rate=0.00005, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
+                 learning_rate=0.0005, gamma=0.8, critic_layers=[64, 64], actor_layers=[64, 64],
                  replay_memory_size=20000, replay_memory_init_size=100,
                  # TODO add more? these necessary? and see ppo2.py in OpenAI for docs on what params are. e.g. gamma vs lam
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
@@ -81,12 +81,11 @@ class PPOAgent(object):
 
     def train(self):
         '''Train the model'''
-        samples = random.sample(self.memory, self.batch_size)
-        state_batch = np.array([sample['state'] for sample in samples])
-        action_batch = np.array([sample['action'] for sample in samples])
-        reward_batch = np.array([sample['reward'] for sample in samples])
-        next_state_batch = np.array([sample['next_state'] for sample in samples])
-        done_batch = np.array([sample['done'] for sample in samples]) # TODO Do we need this?
+        state_batch = np.array([sample['state'] for sample in self.memory])
+        action_batch = np.array([sample['action'] for sample in self.memory])
+        reward_batch = np.array([sample['reward'] for sample in self.memory])
+        next_state_batch = np.array([sample['next_state'] for sample in self.memory])
+        done_batch = np.array([1.0 if sample['done'] else 0.0 for sample in self.memory])
         self.policy.update(self.sess, state_batch, action_batch, reward_batch, next_state_batch, done_batch)
 
     # step vs. eval_step as per README
@@ -126,16 +125,17 @@ class PPOAgent(object):
 
 class PPOPolicy(object):
     ''' PPO Policy context and data '''
-    def __init__(self, sess, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
+    def __init__(self, sess, action_num, state_shape, learning_rate, lam=1, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
         self.sess = sess
         self.gamma = gamma          # This is the discount factor
+        self.lam = lam              # Generalized advantage estimator
         self.vf_coef = vf_coef      # Value function coefficient in loss function
         self.ent_coef = ent_coef    # Entropy coefficient in loss function
         # State, next state, rewards, actions
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
-        self.done = tf.placeholder(dtype=tf.bool, shape=(None), name='done')
+        self.done = tf.placeholder(dtype=tf.float32, shape=(None), name='done') # 0 if not done, 1 if done
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
         self.actions = tf.placeholder(dtype=tf.int32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
@@ -167,8 +167,8 @@ class PPOPolicy(object):
             {self.X: state_batch, self.X_next: next_state_batch, self.actions: action_batch, self.is_train: False}
         )
 
-        _, loss = sess.run(
-            [self.train_op, self._loss],
+        _, loss, advantage, delta, next_value_pred, value_pred, rewards, accum_delta, done = sess.run(
+            [self.train_op, self._loss, self.advantage, self.delta, self.next_value_pred, self.value_pred, self.rewards, self.accum_delta, self.done],
             {
                 self.X: state_batch,
                 self.actions: action_batch,
@@ -176,9 +176,14 @@ class PPOPolicy(object):
                 self.X_next: next_state_batch,
                 self.is_train: True,
                 self.OLDVPRED: oldvpred,
-                self.OLDNEGLOGPAC: oldneglogpac
+                self.OLDNEGLOGPAC: oldneglogpac,
+                self.done: done_batch
             }
         )
+        # Sample code for debugging advantage
+        # import pandas as pd
+        # df = pd.DataFrame({"advantage": advantage, "delta": delta, "accum_delta": accum_delta, "rewards": rewards, "done": done_batch})
+        # import pdb; pdb.set_trace()
         return loss
 
     def predict(self, sess, state):
@@ -208,7 +213,7 @@ class PPOPolicy(object):
         self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)[0]
 
         # Calculate advantage and loss
-        self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred, self.done)
+        self.advantage = self._advantage()
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
     def _build_neg_log_taken_action_probs(self):
@@ -273,7 +278,7 @@ class PPOPolicy(object):
 
         return loss
 
-    def _advantage(self, returns, value_preds, next_value_preds, done):
+    def _advantage(self):
         '''Advantage estimator
         Parameters
         ----------
@@ -285,5 +290,11 @@ class PPOPolicy(object):
         -------
         advantage: tf.Tensor 
         '''
-        return returns + self.gamma * next_value_preds - value_preds
+        # comes from equations 10/11 of the paper, adjusting for the "terminal" state using done
+        self.delta = self.rewards + (1.0 - self.done) * (self.gamma * self.next_value_pred - self.value_pred)
+        advantage, accum = tf.scan(
+                lambda a, x: (x[0] + self.gamma * self.lam * (1 - x[1]) * a[0], x[1]),
+                (self.delta, self.done), reverse=True)
+        self.accum_delta = accum  
+        return advantage 
 

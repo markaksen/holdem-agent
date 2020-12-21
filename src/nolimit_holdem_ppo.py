@@ -1,5 +1,7 @@
 ''' Training a PPO Agent on Texas No-Limit Holdem
 '''
+
+import csv
 import time
 import tensorflow as tf
 import os
@@ -28,7 +30,7 @@ max_buffer_size = 10000
 train_every = 10
 
 # The paths for saving the logs and learning curves
-log_dir = f'./experiments/nolimit_holdem_ppo_result_{evaluate_every}/'
+log_dir = f'./experiments/nolimit_holdem_ppo_result_adv_{evaluate_every}/'
 
 # Set a global seed
 set_global_seed(0)
@@ -78,8 +80,14 @@ with tf.Session() as sess:
                 episodes_per_sec = episode / (current_time - start_time)
                 remaining_mins = (episode_num - episode) / episodes_per_sec / 60
                 print(f"Current Rate: {episodes_per_sec:.2f}, Estimated Time Remaining: {remaining_mins:.2f} mins")
-            logger.log_performance(env.timestep, tournament(eval_env, evaluate_num)[0])
-
+            reward = tournament(eval_env, evaluate_num)[0]
+            logger.log_performance(env.timestep, reward)
+            with open(os.path.join(log_dir, "perf.csv"), "a+") as fd:
+                fieldnames = ['timestep', 'reward']
+                writer = csv.DictWriter(fd, fieldnames=fieldnames)
+                if episode == 0:
+                    writer.writeheader()
+                writer.writerow({'timestep': env.timestep, 'reward': reward})
     # Close files in the logger
     logger.close_files()
 
