@@ -15,7 +15,7 @@ class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
     
     def __init__(self, sess, train_every, action_num, state_shape, batch_size=32,
-                 learning_rate=0.0005, gamma=0.8, critic_layers=[64, 64], actor_layers=[64, 64],
+                 learning_rate=0.0005, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
                  replay_memory_size=20000, replay_memory_init_size=100,
                  # TODO add more? these necessary? and see ppo2.py in OpenAI for docs on what params are. e.g. gamma vs lam
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
