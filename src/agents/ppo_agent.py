@@ -131,7 +131,6 @@ class PPOPolicy(object):
     def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[100], actor_layers=[100],
                  # TODO params, same as above
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
-        print(state_shape)
         self.gamma = gamma  # This is the discount factor
         # This is our critic network, which estimates value of any given state
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
@@ -143,7 +142,6 @@ class PPOPolicy(object):
         # This is our actor network, which is defining our policy
         self._build_actor_net(action_num=action_num, layers=actor_layers)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
-        self.train_op = self.optimizer.minimize(self._loss_pg(), global_step=tf.contrib.framework.get_global_step())
 
 # this part down is based on OpenAI
 # already have actions (int or float?), lr, cliprate, rewards
@@ -162,15 +160,27 @@ class PPOPolicy(object):
         self.vf_coef = vf_coef
         self.ent_coef = ent_coef
 
+        # Training
+        self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
+        # self.train_op = self.optimizer.minimize(self._loss_pg(), global_step=tf.contrib.framework.get_global_step())
+
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
+        oldvpred, oldneglogpac = sess.run(
+            [self._neg_log_probs_for_taken_actions, self.value_pred],
+            {self.X: state_batch, self.X_next: next_state_batch, self.is_train: False}
+        )
+
         _, loss = sess.run(
-            [self.train_op, self._loss_pg()], 
+            [self.train_op, self._loss],
+            # [self.train_op, self._loss_pg],
             {
                 self.X: state_batch,
                 self.actions: action_batch,
-                self.rewards:rewards_batch,
+                self.rewards: rewards_batch,
                 self.X_next: next_state_batch,
                 self.is_train: True,
+                self.OLDVPRED: oldvpred,
+                self.OLDNEGLOGPAC: oldneglogpac
             }
         )
         return loss
@@ -186,6 +196,7 @@ class PPOPolicy(object):
         return action_prob
 
     def _build_value_net(self, layers):
+        #TODO need to pass in is_train at all layers
         '''Build the value network'''
         """reference https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f, dqn_agent"""
         # Batch normalization
@@ -201,13 +212,19 @@ class PPOPolicy(object):
         self.value_pred = tf.contrib.layers.fully_connected(fc, 1, activation_fn=None)
         self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)
 
-        # TODO see dqn_agent line 275 for getting predictions
-
-        # TODO should this be a tensor or shoulds call tf.reduce_mean()
         # Calculate advantage and loss
         self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
         #TODO Need to validate this function works as we expect
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
+
+    def _neg_log_probs_for_taken_actions(self):
+        # Get the predictions for the chosen actions only
+        batch_size = tf.shape(self.action_probabilities)[0]
+        action_count = tf.shape(self.action_probabilities)[1]
+        gather_indices = tf.range(batch_size) * action_count + self.actions
+        action_predictions = tf.gather(tf.reshape(self.action_probabilities, [-1]), gather_indices)
+        log_action_probs = tf.negative(tf.math.log(action_predictions))
+        return log_action_probs
 
     def _build_actor_net(self, action_num, layers):
         '''Build the actor network'''
@@ -220,39 +237,13 @@ class PPOPolicy(object):
 
     def _loss_pg(self):
         """
-        L^{PG}(\theta) = \hat{E}[log \pi_{\theta}(a_t | s_t) \hat{A_t}] 
+        L^{PG}(\theta) = \hat{E}[log \pi_{\theta}(a_t | s_t) \hat{A_t}]
         """
         return tf.reduce_mean(self._value_loss)
 
 
-    def _loss_clip(self, epsilon=0.2):
-        '''Compute the clip loss'''
-        # TODO remove this method once _loss filled out
-        # Reference https://arxiv.org/pdf/1707.06347.pdf - equation 7
-        # TODO implement L^{CLIP}(theta) - see below link
-        # epsilon <- hyper param, 0.2, say
-        #
-        # Ahat_t <- estimated value of advantage function at time t
-        # r_t(theta) <- pi_theta(a_t | s_t) / pi_thetaold(a_t | s_t), where pi_theta is stochastic policy i.e. policy ration
-        #
-        # # Unclipped objective
-        # unclipped <- r_t(theta) * Ahat_t
-        # # Clipped objective
-        # clipped <- max(min(r_t(theta), 1+epsilon), 1-epsilon) * Ahat_t [tf has clip_by_value, which they use in their implementation]
-        # # Take their min so that result is lower bound on unclipped objective
-        # return min(unclipped, clipped)
-        raise NotImplementedError
-
-    def entropy(self):
+    def _entropy(self):
         # open AI: return tf.add_n([p.entropy() for p in self.categoricals])
-        raise NotImplementedError
-
-    def neglogp(self, actions):
-        # open AI: return tf.add_n([p.neglogp(px) for p, px in zip(self.categoricals, tf.unstack(x, axis=-1))])
-        raise NotImplementedError
-
-    def vf_predict(self):
-        # oepn AI: train_model.vf
         raise NotImplementedError
 
     def _loss(self):
@@ -262,23 +253,22 @@ class PPOPolicy(object):
         # which is described in the PPO Paper here: https://arxiv.org/pdf/1707.06347.pdf in equation 9
 
         # TODO for OpenAI (PPO paper authors') implementation, consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
-        return 0
         # Calculate ratio (pi current policy / pi old policy) - use neg log probabilities
-        neglogpac = None #self.neglogp(self.actions) TODO
+        neglogpac = self._neg_log_probs_for_taken_actions()
         ratio = tf.exp(self.OLDNEGLOGPAC - neglogpac)
 
         # Calculate the entropy
         # Entropy is used to improve exploration by limiting the premature convergence to suboptimal policy.
         # TODO
         # entropy = tf.reduce_mean(train_model.pd.entropy())
-        entropy = None #self.entropy()
+        entropy = 0 #self.entropy()
 
         # CALCULATE THE LOSS
         # Total loss = Policy gradient loss - entropy * entropy coefficient + Value coefficient * value loss
 
         # Clip the value to reduce variability during Critic training
         # Get the predicted value
-        vpred = None # self.vf_predict() TODO
+        vpred = self.value_pred
         vpredclipped = self.OLDVPRED + tf.clip_by_value(vpred - self.OLDVPRED, - self.CLIPRANGE, self.CLIPRANGE)
         # Unclipped value
         vf_losses1 = tf.square(vpred - self.rewards)
@@ -288,9 +278,8 @@ class PPOPolicy(object):
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
 
         # Defining Loss = - J is equivalent to max J
-        pg_losses = -self.ADV * ratio
-
-        pg_losses2 = -self.ADV * tf.clip_by_value(ratio, 1.0 - self.CLIPRANGE, 1.0 + self.CLIPRANGE)
+        pg_losses = -self.advantage * ratio
+        pg_losses2 = -self.advantage * tf.clip_by_value(ratio, 1.0 - self.CLIPRANGE, 1.0 + self.CLIPRANGE)
 
         # Final PG loss
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
