@@ -24,7 +24,7 @@ episode_num = 100000
 memory_init_size = 1000
 
 # Train the agent every X steps
-train_every = 1
+train_every = 10
 
 # The paths for saving the logs and learning curves
 log_dir = './experiments/nolimit_holdem_ppo_result/'
