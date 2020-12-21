@@ -43,16 +43,11 @@ with tf.Session() as sess:
                      action_num=env.action_num,
                      train_every=train_every,
                      state_shape=env.state_shape,
-<<<<<<< HEAD
-                     actor_layers=[32, 32],
-                     critic_layers=[32, 32])
-=======
                      replay_memory_init_size=memory_init_size,
                      replay_memory_size=max_buffer_size,
                      actor_layers=[32, 32],
                      critic_layers=[32, 32],
                      learning_rate=3e-4)
->>>>>>> 236623093ab0429a18f934ad412b5d80a0e10a92
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
@@ -75,9 +70,9 @@ with tf.Session() as sess:
         if episode % evaluate_every == 0:
             if episode > 0:
                 current_time = time.time()
-                secs_per_episode = (current_time - start_time) / episode
-                remaining_mins = (episode_num - episode) / secs_per_episode / 60
-                print(f"Current Rate: {secs_per_episode:.2f}, Estimated Time Remaining: {remaining_mins:.2f} mins")
+                episodes_per_sec = episode / (current_time - start_time)
+                remaining_mins = (episode_num - episode) / episodes_per_sec / 60
+                print(f"Current Rate: {episodes_per_sec:.2f}, Estimated Time Remaining: {remaining_mins:.2f} mins")
             logger.log_performance(env.timestep, tournament(eval_env, evaluate_num)[0])
 
     # Close files in the logger
