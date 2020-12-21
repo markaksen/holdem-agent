@@ -14,7 +14,7 @@ Transition = namedtuple('Transition', ['state', 'action', 'reward', 'next_state'
 class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
     
-    def __init__(self, sess, train_every, action_num, state_shape,
+    def __init__(self, sess, train_every, action_num, state_shape, batch_size=32,
                  learning_rate=0.00005, gamma=0.9, critic_layers=None, actor_layers=None,
                  replay_memory_size=20000, replay_memory_init_size=100,
                  # TODO add more? these necessary? and see ppo2.py in OpenAI for docs on what params are. e.g. gamma vs lam
@@ -33,8 +33,9 @@ class PPOAgent(object):
         '''
         self.sess = sess
         self.train_every = train_every
-        self.use_raw = True
+        self.use_raw = False  # Allow us to return integers from step and eval_step
         self.memory = []
+        self.batch_size = batch_size
         self.replay_memory_size = replay_memory_size
         self.replay_memory_init_size = replay_memory_init_size
         self.total_t = 0
@@ -83,8 +84,11 @@ class PPOAgent(object):
         # TODO implement the sampling for the memory
 
         samples = random.sample(self.memory, self.batch_size)
-        import pdb; pdb.set_trace()
-        state_batch, action_batch, reward_batch, next_state_batch = self.memory.sample()
+        state_batch = np.array([sample['state'] for sample in samples])
+        action_batch = np.array([sample['action'] for sample in samples])
+        reward_batch = np.array([sample['reward'] for sample in samples])
+        next_state_batch = np.array([sample['next_state'] for sample in samples])
+        done_batch = np.array([sample['done'] for sample in samples]) # TODO Do we need this?
         self.policy.update(self.sess, state_batch, action_batch, reward_batch, next_state_batch)
 
     # step vs. eval_step as per README
@@ -103,7 +107,6 @@ class PPOAgent(object):
         # Sample according to probs (based on dqn_agent impl)
         state_obs = np.expand_dims(state['obs'], 0)
         A = self.policy.predict(self.sess, state_obs)[0]
-        import pdb; pdb.set_trace()
         A = remove_illegal(A, state['legal_actions'])
         action = np.random.choice(np.arange(len(A)), p=A)
         return action
@@ -117,7 +120,8 @@ class PPOAgent(object):
             probs (list): a list of probabilies
         '''
         # Sample according to probs (based on dqn_agent impl)
-        A = self.policy.predict(state['obs']) # todo in dqn this is not self.predict but rather self.estimator.predict
+        state_obs = np.expand_dims(state['obs'], 0)
+        A = self.policy.predict(self.sess, state_obs)[0]
         probs = remove_illegal(A, state['legal_actions'])
         best_action = np.argmax(probs)
         return best_action, probs
@@ -133,7 +137,7 @@ class PPOPolicy(object):
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
-        self.actions = tf.placeholder(dtype=tf.float32, shape=(None), name='action')
+        self.actions = tf.placeholder(dtype=tf.int32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
         self._build_value_net(layers=critic_layers)
         # This is our actor network, which is defining our policy
@@ -160,12 +164,13 @@ class PPOPolicy(object):
 
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
         _, loss = sess.run(
-            [self.train_op, self._loss_pg], 
+            [self.train_op, self._loss_pg()], 
             {
                 self.X: state_batch,
                 self.actions: action_batch,
                 self.rewards:rewards_batch,
-                self.X_next: next_state_batch
+                self.X_next: next_state_batch,
+                self.is_train: True,
             }
         )
         return loss
@@ -209,7 +214,7 @@ class PPOPolicy(object):
         fc = tf.layers.batch_normalization(self.X, training=self.is_train)
         for layer_width in layers:
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
-        self.action_probabilities = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=None)
+        self.action_probabilities = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=tf.math.softmax)
         # TODO what is the actor loss? this is prediction error on action taken I think
         # self._actor_loss = tf.losses.log_loss(self.actions, self.action_probabilities)
 
