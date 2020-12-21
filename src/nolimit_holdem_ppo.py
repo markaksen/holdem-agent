@@ -1,6 +1,6 @@
 ''' Training a PPO Agent on Texas No-Limit Holdem
 '''
-
+import time
 import tensorflow as tf
 import os
 
@@ -16,7 +16,7 @@ env = rlcard.make('no-limit-holdem', config={'seed': 0})
 eval_env = rlcard.make('no-limit-holdem', config={'seed': 0})
 
 # Set the iterations numbers and how frequently we evaluate the performance
-evaluate_every = 1000
+evaluate_every = 100
 evaluate_num = 1000
 episode_num = 100000
 
@@ -27,7 +27,7 @@ memory_init_size = 1000
 train_every = 10
 
 # The paths for saving the logs and learning curves
-log_dir = './experiments/nolimit_holdem_ppo_result/'
+log_dir = f'./experiments/nolimit_holdem_ppo_result_{evaluate_every}/'
 
 # Set a global seed
 set_global_seed(0)
@@ -38,13 +38,12 @@ with tf.Session() as sess:
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Set up the agents
-    # TODO pass appropriate parameters to the PPO Agent beyond these
     agent = PPOAgent(sess,
                      action_num=env.action_num,
                      train_every=train_every,
                      state_shape=env.state_shape,
-                     actor_layers=[64, 64],
-                     critic_layers=[64, 64])
+                     actor_layers=[32, 32],
+                     critic_layers=[32, 32])
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
@@ -54,9 +53,8 @@ with tf.Session() as sess:
 
     # Init a Logger to plot the learning curve
     logger = Logger(log_dir)
-
+    start_time = time.time()
     for episode in range(episode_num):
-
         # Generate data from the environment
         trajectories, _ = env.run(is_training=True)
 
@@ -66,6 +64,11 @@ with tf.Session() as sess:
 
         # Evaluate the performance. Play with random agents.
         if episode % evaluate_every == 0:
+            if episode > 0:
+                current_time = time.time()
+                secs_per_episode = (current_time - start_time) / episode
+                remaining_mins = (episode_num - episode) / secs_per_episode / 60
+                print(f"Current Rate: {secs_per_episode:.2f}, Estimated Time Remaining: {remaining_mins:.2f} mins")
             logger.log_performance(env.timestep, tournament(eval_env, evaluate_num)[0])
 
     # Close files in the logger
