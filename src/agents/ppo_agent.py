@@ -15,10 +15,10 @@ class PPOAgent(object):
     """A PPO RL Agent in the RLCard environment"""
     
     def __init__(self, sess, train_every, action_num, state_shape, batch_size=32,
-                 learning_rate=0.00005, gamma=0.9, critic_layers=None, actor_layers=None,
+                 learning_rate=0.00005, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
                  replay_memory_size=20000, replay_memory_init_size=100,
                  # TODO add more? these necessary? and see ppo2.py in OpenAI for docs on what params are. e.g. gamma vs lam
-                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
+                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
         '''
         Build a PPOAgent for playing RLCard games. Implements an advantage actor-critic method that is trained using the PPO surrogate objective
         Args:
@@ -44,12 +44,11 @@ class PPOAgent(object):
             state_shape=state_shape,
             learning_rate=learning_rate,
             gamma=gamma,
-            critic_layers=critic_layers if critic_layers else [100],
-            actor_layers=actor_layers if actor_layers else [100],
+            critic_layers=critic_layers,
+            actor_layers=actor_layers,
             cliprange=cliprange,
             vf_coef=vf_coef,
-            ent_coef=ent_coef,
-            lam=lam
+            ent_coef=ent_coef
         )
     
     def feed(self, ts):
@@ -128,9 +127,8 @@ class PPOAgent(object):
 
 class PPOPolicy(object):
     ''' PPO Policy context and data '''
-    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[100], actor_layers=[100],
-                 # TODO params, same as above
-                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0, lam=0.95):
+    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
+                 cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
         self.gamma = gamma  # This is the discount factor
         # State, next state, rewards, actions
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")

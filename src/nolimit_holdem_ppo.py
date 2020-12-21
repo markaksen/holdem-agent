@@ -42,7 +42,9 @@ with tf.Session() as sess:
     agent = PPOAgent(sess,
                      action_num=env.action_num,
                      train_every=train_every,
-                     state_shape=env.state_shape)
+                     state_shape=env.state_shape,
+                     actor_layers=[64, 64],
+                     critic_layers=[64, 64])
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
