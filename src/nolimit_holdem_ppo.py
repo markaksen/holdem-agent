@@ -47,9 +47,8 @@ with tf.Session() as sess:
                      state_shape=env.state_shape,
                      replay_memory_init_size=memory_init_size,
                      replay_memory_size=max_buffer_size,
-                     actor_layers=[32, 32],
-                     critic_layers=[32, 32],
-                     #learning_rate=3e-4
+                     actor_layers=[64, 64],
+                     critic_layers=[64, 64],
                      )
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
@@ -95,7 +94,7 @@ with tf.Session() as sess:
     logger.plot('PPO')
     
     # Save model
-    save_dir = 'models/nolimit_holdem_ppo'
+    save_dir = '../models/nolimit_holdem_ppo_64x64_oldadv_lrsmall'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     saver = tf.train.Saver()
