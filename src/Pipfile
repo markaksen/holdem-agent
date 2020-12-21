@@ -14,5 +14,5 @@ python_version = "3.7"
 
 [scripts]
 train-ppo = "python3 nolimit_holdem_ppo.py"
-train-nfsp = "python3 nolimit_holdem_nfsp.py"
-train-dqn = "python3 nolimit_holdem_dqn.py"
+train-nfsp = "python3 samples/nolimit_holdem_nfsp.py"
+train-dqn = "python3 samples/nolimit_holdem_dqn.py"
