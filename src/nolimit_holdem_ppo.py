@@ -47,7 +47,8 @@ with tf.Session() as sess:
                      replay_memory_size=max_buffer_size,
                      actor_layers=[32, 32],
                      critic_layers=[32, 32],
-                     learning_rate=3e-4)
+                     #learning_rate=3e-4
+                     )
     random_agent = RandomAgent(action_num=eval_env.action_num)
     env.set_agents([agent, random_agent])
     eval_env.set_agents([agent, random_agent])
