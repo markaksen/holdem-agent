@@ -15,8 +15,8 @@ env = rlcard.make('no-limit-holdem', config={'seed': 0})
 eval_env = rlcard.make('no-limit-holdem', config={'seed': 0})
 
 # Set the iterations numbers and how frequently we evaluate the performance
-evaluate_every = 10000
-evaluate_num = 10000
+evaluate_every = 1000
+evaluate_num = 1000
 episode_num = 100000
 
 # The intial memory size
@@ -26,7 +26,7 @@ memory_init_size = 1000
 train_every = 64
 
 # The paths for saving the logs and learning curves
-log_dir = './experiments/nolimit_holdem_nfsp_result/'
+log_dir = f'../experiments/nolimit_holdem_nfsp_result_{train_every}/'
 
 # Set a global seed
 set_global_seed(0)
