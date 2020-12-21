@@ -56,6 +56,10 @@ with tf.Session() as sess:
     # Initialize global variables
     sess.run(tf.global_variables_initializer())
 
+    # Include this line to verify graph not being updated in each iteration. This helps identify memory leaks.
+    # Leave uncommented since tf.train.Saver() below is a graph operation.
+    # sess.graph.finalize()
+
     # Init a Logger to plot the learning curve
     logger = Logger(log_dir)
     start_time = time.time()

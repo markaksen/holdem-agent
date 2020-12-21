@@ -40,6 +40,7 @@ class PPOAgent(object):
         self.replay_memory_init_size = replay_memory_init_size
         self.total_t = 0
         self.policy = PPOPolicy(
+            sess=sess,
             action_num=action_num,
             state_shape=state_shape,
             learning_rate=learning_rate,
@@ -125,9 +126,12 @@ class PPOAgent(object):
 
 class PPOPolicy(object):
     ''' PPO Policy context and data '''
-    def __init__(self, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
+    def __init__(self, sess, action_num, state_shape, learning_rate, gamma=0.9, critic_layers=[64, 64], actor_layers=[64, 64],
                  cliprange=0.2, vf_coef=0.5, ent_coef=0.0):
-        self.gamma = gamma  # This is the discount factor
+        self.sess = sess
+        self.gamma = gamma          # This is the discount factor
+        self.vf_coef = vf_coef      # Value function coefficient in loss function
+        self.ent_coef = ent_coef    # Entropy coefficient in loss function
         # State, next state, rewards, actions
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
@@ -140,7 +144,8 @@ class PPOPolicy(object):
         self._build_value_net(layers=critic_layers)
         # This is our actor network, which is defining our policy
         self._build_actor_net(action_num=action_num, layers=actor_layers)
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
+        # Based on actor network build out graph to compute negative log probabilities for chosen actions
+        self._build_neg_log_taken_action_probs()
 
         # Keep track of old actor
         self.OLDNEGLOGPAC = tf.placeholder(tf.float32, [None]) # old neg log probs
@@ -149,16 +154,16 @@ class PPOPolicy(object):
         # Cliprange
         self.CLIPRANGE = cliprange
 
-        # sf params
-        self.vf_coef = vf_coef
-        self.ent_coef = ent_coef
+        # Optimizer
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='ppo_adam')
 
         # Training
+        self._loss = self._loss()
         self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
 
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch, done_batch):
         oldvpred, oldneglogpac = sess.run(
-            [self._neg_log_probs_for_taken_actions, self.value_pred],
+            [self.neg_log_taken_action_probs, self.value_pred],
             {self.X: state_batch, self.X_next: next_state_batch, self.actions: action_batch, self.is_train: False}
         )
 
@@ -206,15 +211,14 @@ class PPOPolicy(object):
         self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred, self.done)
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
-    @property
-    def _neg_log_probs_for_taken_actions(self):
+    def _build_neg_log_taken_action_probs(self):
         # Get the predictions for the chosen actions only
         batch_size = tf.shape(self.action_probabilities)[0]
         action_count = tf.shape(self.action_probabilities)[1]
         gather_indices = tf.range(batch_size) * action_count + self.actions
         action_predictions = tf.gather(tf.reshape(self.action_probabilities, [-1]), gather_indices)
-        log_action_probs = tf.negative(tf.math.log(action_predictions))
-        return log_action_probs
+        neg_log_taken_action_probs = tf.negative(tf.math.log(action_predictions))
+        self.neg_log_taken_action_probs = neg_log_taken_action_probs
 
     def _build_actor_net(self, action_num, layers):
         '''Build the actor network'''
@@ -223,7 +227,7 @@ class PPOPolicy(object):
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
         self.action_probabilities = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=tf.math.softmax)
 
-    @property
+    # @property
     def _loss(self):
         '''Compute the loss'''
         # This should compute the loss for the overall system using the PPO Loss statement
@@ -234,7 +238,7 @@ class PPOPolicy(object):
         # Consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
 
         # Calculate ratio (pi current policy / pi old policy) - use neg log probabilities
-        neglogpac = self._neg_log_probs_for_taken_actions
+        neglogpac = self.neg_log_taken_action_probs
         ratio = tf.exp(self.OLDNEGLOGPAC - neglogpac)
 
         # Calculate the entropy
