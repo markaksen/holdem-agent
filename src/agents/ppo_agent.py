@@ -79,9 +79,7 @@ class PPOAgent(object):
         })
 
     def train(self):
-        ''' Train the model'''
-        # TODO implement the sampling for the memory
-
+        '''Train the model'''
         samples = random.sample(self.memory, self.batch_size)
         state_batch = np.array([sample['state'] for sample in samples])
         action_batch = np.array([sample['action'] for sample in samples])
