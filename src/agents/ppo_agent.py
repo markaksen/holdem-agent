@@ -167,7 +167,7 @@ class PPOPolicy(object):
     def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
         oldvpred, oldneglogpac = sess.run(
             [self._neg_log_probs_for_taken_actions, self.value_pred],
-            {self.X: state_batch, self.X_next: next_state_batch, self.is_train: False}
+            {self.X: state_batch, self.X_next: next_state_batch, self.actions: action_batch, self.is_train: False}
         )
 
         _, loss = sess.run(
@@ -217,6 +217,7 @@ class PPOPolicy(object):
         #TODO Need to validate this function works as we expect
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
+    @property
     def _neg_log_probs_for_taken_actions(self):
         # Get the predictions for the chosen actions only
         batch_size = tf.shape(self.action_probabilities)[0]
@@ -246,6 +247,7 @@ class PPOPolicy(object):
         # open AI: return tf.add_n([p.entropy() for p in self.categoricals])
         raise NotImplementedError
 
+    @property
     def _loss(self):
         '''Compute the loss'''
         # This should compute the loss for the overall system using the PPO Loss statement
@@ -254,7 +256,7 @@ class PPOPolicy(object):
 
         # TODO for OpenAI (PPO paper authors') implementation, consult https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py
         # Calculate ratio (pi current policy / pi old policy) - use neg log probabilities
-        neglogpac = self._neg_log_probs_for_taken_actions()
+        neglogpac = self._neg_log_probs_for_taken_actions
         ratio = tf.exp(self.OLDNEGLOGPAC - neglogpac)
 
         # Calculate the entropy
