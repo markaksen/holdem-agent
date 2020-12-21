@@ -86,7 +86,7 @@ class PPOAgent(object):
         reward_batch = np.array([sample['reward'] for sample in samples])
         next_state_batch = np.array([sample['next_state'] for sample in samples])
         done_batch = np.array([sample['done'] for sample in samples]) # TODO Do we need this?
-        self.policy.update(self.sess, state_batch, action_batch, reward_batch, next_state_batch)
+        self.policy.update(self.sess, state_batch, action_batch, reward_batch, next_state_batch, done_batch)
 
     # step vs. eval_step as per README
         # env.run(is_training=False): Run a complete game and return trajectories and payoffs.
@@ -131,6 +131,7 @@ class PPOPolicy(object):
         # State, next state, rewards, actions
         self.X = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="X")
         self.X_next = tf.placeholder(dtype=tf.float32, shape=(None, state_shape[0]), name="next_X")
+        self.done = tf.placeholder(dtype=tf.bool, shape=(None), name='done')
         self.rewards = tf.placeholder(dtype=tf.float32, shape=(None), name='reward')
         self.actions = tf.placeholder(dtype=tf.int32, shape=(None), name='action')
         self.is_train = tf.placeholder(tf.bool, name="is_train")
@@ -155,7 +156,7 @@ class PPOPolicy(object):
         # Training
         self.train_op = self.optimizer.minimize(self._loss, global_step=tf.contrib.framework.get_global_step())
 
-    def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch):
+    def update(self, sess, state_batch, action_batch, rewards_batch, next_state_batch, done_batch):
         oldvpred, oldneglogpac = sess.run(
             [self._neg_log_probs_for_taken_actions, self.value_pred],
             {self.X: state_batch, self.X_next: next_state_batch, self.actions: action_batch, self.is_train: False}
@@ -202,7 +203,7 @@ class PPOPolicy(object):
         self.next_value_pred = tf.contrib.layers.fully_connected(fc_next, 1, activation_fn=None)[0]
 
         # Calculate advantage and loss
-        self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred)
+        self.advantage = self._advantage(self.rewards, self.next_value_pred, self.value_pred, self.done)
         self._value_loss = tf.reduce_mean(tf.pow(self.advantage, 2))
 
     @property
@@ -221,19 +222,6 @@ class PPOPolicy(object):
         for layer_width in layers:
             fc = tf.contrib.layers.fully_connected(fc, layer_width, activation_fn=tf.tanh)
         self.action_probabilities = tf.contrib.layers.fully_connected(fc, action_num, activation_fn=tf.math.softmax)
-        # TODO what is the actor loss? this is prediction error on action taken I think
-        # self._actor_loss = tf.losses.log_loss(self.actions, self.action_probabilities)
-
-    def _loss_pg(self):
-        """
-        L^{PG}(\theta) = \hat{E}[log \pi_{\theta}(a_t | s_t) \hat{A_t}]
-        """
-        return tf.reduce_mean(self._value_loss)
-
-
-    def _entropy(self):
-        # open AI: return tf.add_n([p.entropy() for p in self.categoricals])
-        raise NotImplementedError
 
     @property
     def _loss(self):
@@ -281,7 +269,7 @@ class PPOPolicy(object):
 
         return loss
 
-    def _advantage(self, returns, value_preds, next_value_preds):
+    def _advantage(self, returns, value_preds, next_value_preds, done):
         '''Advantage estimator
         Parameters
         ----------
@@ -293,5 +281,5 @@ class PPOPolicy(object):
         -------
         advantage: tf.Tensor 
         '''
-        return returns + (1.0 - self.gamma * next_value_preds) - value_preds
+        return returns + self.gamma * next_value_preds - value_preds
 
